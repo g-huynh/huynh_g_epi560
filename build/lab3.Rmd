@@ -1,0 +1,30 @@
+---
+title: "EPI560_lab02_040325"
+author: "Gina Huynh"
+date: "2025-04-03"
+output: html_document
+---
+
+#Part I
+```{r}
+knitr::include_graphics("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/lab02_SS1.png")
+knitr::include_graphics("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/lab02_SS2.png")
+knitr::include_graphics("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/lab02_SS3.png")
+```
+
+#Part II
+```{r}
+knitr::include_graphics("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/lab02_SS4.png")
+knitr::include_graphics("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/lab02_SS5.png")
+knitr::include_graphics("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/lab02_SS_script.png")
+
+```
+
+#Appendix
+```{r}
+#Part III.a.
+#library(pacman)
+#p_load("usethis", "gitcreds")
+#usethis::create_github_token()
+#gitcreds::gitcreds_set()
+```
