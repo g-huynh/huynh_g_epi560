@@ -1,0 +1,116 @@
+---
+title: "EPI 560: Lab 04"
+author: "Gina Huynh"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    html_document:
+        df_print: paged
+        theme: cosmo
+        toc: yes
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "build") })
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Setup
+library(pacman)
+library(DBI)
+library(RSQLite)
+p_load("tidyverse", "knitr", "usethis", "gitcreds")
+
+```
+
+
+## Lab 4: Responses  
+
+
+### Part I
+
+
+2. The names of the 3 columns in P_HDL are SEQN, LBDHDD, LBDHDDSI
+
+
+3. The highest value LBDHDD in the first three rows is 72.0
+
+```{r part_1, echo=FALSE, message=FALSE, warning=FALSE}
+# code for part 1
+db <- dbConnect(RSQLite::SQLite(), dbname = "epi560.sqlite")
+#Show all tables in db
+#dbListTables(db)
+query <- dbGetQuery(db, "SELECT * FROM P_HDL LIMIT 3")
+
+```
+
+
+### Part II
+
+2. The columns and d-types are listed below under "name" and "type"
+
+```{r part_2, echo=FALSE, message=FALSE, warning=FALSE}
+# code for part 2
+query <- dbGetQuery(db, "PRAGMA table_info('P_AUQ')")
+query
+```
+
+
+3. The primary key for Audiometry (P_AUQ) is SEQN.
+
+
+4. There are no foreign keys in this table.
+
+
+5. This is a preview of the full P_AUQ table:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+p_auq <- dbGetQuery(db, "SELECT * FROM P_AUQ")
+kable(head(p_auq, 5))
+```
+
+
+6. This is a preview of 2 columns, *SEQN* and *AUQ400 - When began to have hearing loss?*, from the P_AUQ table:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+p_auq_hearingloss <- dbGetQuery(db, "SELECT SEQN, AUQ400 FROM P_AUQ")
+kable(head(p_auq_hearingloss, 5))
+```
+
+
+7. This is a preview of 2 columns, *SEQN* and *AUQ400 - When began to have hearing loss?*, filtering rows by *AUQ410b - Cause of hearing loss-Ear infections*, from the P_AUQ table:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+p_auq_hearingloss_infection <- dbGetQuery(db, "SELECT SEQN, AUQ400 FROM P_AUQ WHERE AUQ410b='2'")
+kable(head(p_auq_hearingloss_infection, 5))
+```
+
+
+8. This is a preview of 2 columns, *SEQN* and *AUQ400 - When began to have hearing loss?*, filtering rows by *AUQ410b - Cause of hearing loss-Ear infections* and *AUQ430 - Ever had 3 or more ear infections?*, from the P_AUQ table:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+p_auq_hearingloss_infection_freq <- dbGetQuery(db, "SELECT SEQN, AUQ400 FROM P_AUQ WHERE AUQ410b='2' AND AUQ430='1'")
+kable(head(p_auq_hearingloss_infection_freq, 5))
+
+```
+
+
+### Part III
+
+1. This is a table of glycohemoglobin (P_GHB) and audiometry (P_AUQ) joined by SEQN
+
+*Help: How to remove the duplicate column for the primary ID?*
+
+```{r part_3, echo=FALSE, message=FALSE, warning=FALSE}
+# code for part 3
+p_ghb_auq <- dbGetQuery(db, "SELECT * FROM P_GHB LEFT JOIN P_AUQ ON P_GHB.SEQN = P_AUQ.SEQN")
+kable(head(p_ghb_auq, 5))
+dbDisconnect(db)
+
+```
+
+
+
+/pagebreak  
+
+## Code Appendix  
+ 
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE} 
+```
