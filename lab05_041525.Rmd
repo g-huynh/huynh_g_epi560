@@ -1,0 +1,274 @@
+---
+title: "EPI 560: Lab 05"
+author: "Gina Huynh"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    html_document:
+        df_print: paged
+        theme: cosmo
+        toc: yes
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "build") })
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Setup
+library(pacman)
+library(DBI)
+library(RSQLite)
+p_load("tidyverse", "knitr", "usethis", "gitcreds")
+
+```
+
+
+
+## Lab 5: Responses  
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# code to set up SQL
+db <- dbConnect(RSQLite::SQLite(), dbname = "epi560.sqlite")
+#dbListTables(db)
+query_auq <- dbGetQuery(db, "PRAGMA table_info('P_AUQ')")
+query_slq <- dbGetQuery(db, "PRAGMA table_info('P_SLQ')")
+query_demo <- dbGetQuery(db, "SELECT * FROM P_DEMO")
+
+```
+
+
+
+### Part I
+
+1. Use SQL COUNT identify how many participants are included in the demographics table.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# code for Part I
+# Question 1
+dbGetQuery(db, "SELECT COUNT(*) AS DemoCount FROM P_DEMO")
+
+```
+
+**`r dbGetQuery(db, "SELECT COUNT(*) AS DemoCount FROM P_DEMO")$DemoCount` participants are included in the demographics table.**
+
+
+
+2. Use SQL COUNT and INNER JOIN identify how many participants are included in both the demographics table and the sleep quality table.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Question 2
+dbGetQuery(db, "SELECT COUNT(*) AS DemoCount FROM P_DEMO INNER JOIN P_SLQ ON P_DEMO.SEQN = P_SLQ.SEQN")
+
+```
+
+**`r dbGetQuery(db, "SELECT COUNT(*) AS DemoCount FROM P_DEMO INNER JOIN P_SLQ ON P_DEMO.SEQN = P_SLQ.SEQN")$DemoCount` participants are included in both the demographics and the sleep quality table.**
+
+
+
+### Part II
+
+
+
+3. Retrieve the first five lines (and only the first 5 lines) of your joined dataset using a SELECT query. Your final query should pull the variables that you need to answer the following questions, but should not contain variables that will not be needed.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Question 3
+##Join all columns from different tables and print the first five lines
+dbGetQuery(db, "SELECT 
+  a.SEQN, 
+  a.AUQ054, a.AUQ060, a.AUQ070, a.AUQ080,
+  s.SLQ300, s.SLD012,
+  d.RIAGENDR
+FROM P_AUQ a
+INNER JOIN P_SLQ s ON a.SEQN = s.SEQN
+INNER JOIN P_DEMO d ON a.SEQN = d.SEQN
+LIMIT 5")
+
+```
+
+
+
+4. Among participants who have either good or excellent hearing, what is the average usual sleep time on weekdays or workdays that they get? What about among participants with a little trouble, moderate trouble, or a lot of trouble with their hearing?
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Good or excellent hearing
+avg_secs <- dbGetQuery(db, "
+  SELECT 
+    AVG(strftime('%s', '2000-01-01 ' || SLQ300)) AS avg_seconds
+  FROM P_AUQ a
+  INNER JOIN P_SLQ s ON a.SEQN = s.SEQN
+  INNER JOIN P_DEMO d ON a.SEQN = d.SEQN
+  WHERE a.AUQ054 IN ('1', '2')
+")$avg_seconds
+###Convert avg_seconds back to HH:MM in R
+avg_time <- format(as.POSIXct(avg_secs, origin = '1970-01-01', tz = 'UTC'), "%H:%M")
+
+
+##A little, moderate, or a lot of trouble hearing
+avg_secs <- dbGetQuery(db, "
+  SELECT 
+    AVG(strftime('%s', '2000-01-01 ' || SLQ300)) AS avg_seconds
+  FROM P_AUQ a
+  INNER JOIN P_SLQ s ON a.SEQN = s.SEQN
+  INNER JOIN P_DEMO d ON a.SEQN = d.SEQN
+  WHERE a.AUQ054 IN ('3', '4', '5')
+")$avg_seconds
+###Convert avg_seconds back to HH:MM in R
+avg_time_trouble <- format(as.POSIXct(avg_secs, origin = '1970-01-01', tz = 'UTC'), "%H:%M")
+
+```
+
+**Among participants who have either good or excellent hearing, the average usual sleep time on weekdays or workdays is `r avg_time`. Among participants with a little trouble, moderate trouble, or a lot of trouble with their hearing, the average is `r avg_time_trouble`.**
+
+
+
+5. Write a new SQL query that returns the data from question 4 but also includes age of the included participants in years. Print the first six lines of the dataset that you retrieved.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Question 5
+## Full dataset
+dat5 <- dbGetQuery(db, "SELECT 
+  a.SEQN, 
+  a.AUQ054, a.AUQ060, a.AUQ070, a.AUQ080,
+  s.SLQ300, s.SLD012,
+  d.RIAGENDR, d.RIDAGEYR
+FROM P_AUQ a
+INNER JOIN P_SLQ s ON a.SEQN = s.SEQN
+INNER JOIN P_DEMO d ON a.SEQN = d.SEQN")
+
+## Print first 6 lines
+dbGetQuery(db, "SELECT 
+  a.SEQN, 
+  a.AUQ054, a.AUQ060, a.AUQ070, a.AUQ080,
+  s.SLQ300, s.SLD012,
+  d.RIAGENDR, d.RIDAGEYR
+FROM P_AUQ a
+INNER JOIN P_SLQ s ON a.SEQN = s.SEQN
+INNER JOIN P_DEMO d ON a.SEQN = d.SEQN
+LIMIT 6")
+
+```
+
+
+
+6. Use R with the results from your prior query to determine many NHANES participants are missing values for the variables assessing whether individuals can hear a whisper, normal voice, or shout from across a quiet room. Is this missingness differential after stratifying at age 50 (note: we will consider age as a continuous variable later in the quarter)? Is it differential by usual weekday sleep time over 8 hours (note: we will consider usual weekday sleep time as a continuous variable later in the quarter)? How do you know?
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Question 6
+##Stratify
+dat5$age_group <- ifelse(dat5$RIDAGEYR < 50, "<50", ">=50")
+dat5$sleep_time <- ifelse(dat5$SLD012 < 8, "<8", ">=8")
+
+##Whisper
+overall_summary <- dat5 %>%
+  summarise(
+    total = n(),
+    missing_whisper = sum(is.na(AUQ060))
+  )
+
+stratified_summary_age <- dat5 %>%
+  group_by(age_group) %>%
+  summarise(
+    total = n(),
+    missing_whisper = sum(is.na(AUQ060))
+  )
+
+stratified_summary_sleep <- dat5 %>%
+  group_by(sleep_time) %>%
+  summarise(
+    total = n(),
+    missing_whisper = sum(is.na(AUQ060))
+  )
+
+combined_summary_whisper <- bind_rows(overall_summary, stratified_summary_age, stratified_summary_sleep)
+
+```
+
++ **The total number of participants missing values for the variable assessing hearing a whisper is `r combined_summary_whisper$missing_whisper[1]`. This missingness is differential after stratifying at age 50. Among participants under age 50, missingness for the variable assessing hearing a whisper is `r combined_summary_whisper$missing_whisper[2]` but among participants age 50 or older, missingness is `r combined_summary_whisper$missing_whisper[3]`. This missingness is also differential by usual weekday sleep time over 8 hours. Among participants who sleep under 8 hours during weekdays, missingness of the variable assessing hearing a whisper is `r combined_summary_whisper$missing_whisper[4]` but among those who sleep 8 or more hours, missingness is `r combined_summary_whisper$missing_whisper[5]`.**
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Normal voice
+overall_summary <- dat5 %>%
+  summarise(
+    total = n(),
+    missing_normal = sum(is.na(AUQ070))
+  )
+
+stratified_summary_age <- dat5 %>%
+  group_by(age_group) %>%
+  summarise(
+    total = n(),
+    missing_normal = sum(is.na(AUQ070))
+  )
+
+stratified_summary_sleep <- dat5 %>%
+  group_by(sleep_time) %>%
+  summarise(
+    total = n(),
+    missing_normal = sum(is.na(AUQ070))
+  )
+
+combined_summary_normal <- bind_rows(overall_summary, stratified_summary_age, stratified_summary_sleep)
+
+```
+
++ **The total number of participants missing values for the variable assessing hearing a normal voice is `r combined_summary_normal$missing_normal[1]`. This missingness is differential after stratifying at age 50. Among participants under age 50, missingness for the variable assessing hearing a normal voice is `r combined_summary_normal$missing_normal[2]` but among participants age 50 or older, missingness is `r combined_summary_normal$missing_normal[3]`. This missingness is also differential by usual weekday sleep time over 8 hours. Among participants who sleep under 8 hours during weekdays, missingness of the variable assessing hearing a normal voice is `r combined_summary_normal$missing_normal[4]` but among those who sleep 8 or more hours, missingness is `r combined_summary_normal$missing_normal[5]`.**
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Shout voice
+overall_summary <- dat5 %>%
+  summarise(
+    total = n(),
+    missing_shout = sum(is.na(AUQ080))
+  )
+
+stratified_summary_age <- dat5 %>%
+  group_by(age_group) %>%
+  summarise(
+    total = n(),
+    missing_shout = sum(is.na(AUQ080))
+  )
+
+stratified_summary_sleep <- dat5 %>%
+  group_by(sleep_time) %>%
+  summarise(
+    total = n(),
+    missing_shout = sum(is.na(AUQ080))
+  )
+
+combined_summary_shout <- bind_rows(overall_summary, stratified_summary_age, stratified_summary_sleep)
+
+```
+
++ **The total number of participants missing values for the variable assessing hearing a shout is `r combined_summary_shout$missing_shout[1]`. This missingness is differential after stratifying at age 50. Among participants under age 50, missingness for the variable assessing hearing a shout is `r combined_summary_shout$missing_shout[2]` but among participants age 50 or older, missingness is `r combined_summary_shout$missing_shout[3]`. This missingness is also differential by usual weekday sleep time over 8 hours. Among participants who sleep under 8 hours during weekdays, missingness of the variable assessing hearing a shout is `r combined_summary_shout$missing_shout[4]` but among those who sleep 8 or more hours, missingness is `r combined_summary_shout$missing_shout[5]`.**
+
+
+7. Write a SQL query that returns a dataframe with all participants who have a general condition of hearing that is either good or excellent and who have a usual sleep time on weekdays/workdays that is greater than 8. Print the first six lines of the dataset that you retrieved.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Question 7
+## Print first 6 lines
+dbGetQuery(db, "SELECT 
+  a.SEQN, 
+  a.AUQ054, a.AUQ060, a.AUQ070, a.AUQ080,
+  s.SLQ300, s.SLD012,
+  d.RIAGENDR, d.RIDAGEYR
+FROM P_AUQ a
+INNER JOIN P_SLQ s ON a.SEQN = s.SEQN
+INNER JOIN P_DEMO d ON a.SEQN = d.SEQN
+WHERE (a.AUQ054 = '1' OR a.AUQ054 = '2')
+  AND s.SLD012 > 8
+LIMIT 6")
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+dbDisconnect(db)
+```
+
+\newpage
+
+## Code Appendix  
+ 
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE} 
+```
