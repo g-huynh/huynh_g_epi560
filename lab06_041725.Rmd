@@ -1,0 +1,132 @@
+---
+title: "EPI 560: Lab 06"
+author: "Gina Huynh"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    html_document:
+        df_print: paged
+        theme: cosmo
+        toc: yes
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "build") })
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Setup
+library(pacman)
+library(DBI)
+library(RSQLite)
+p_load("tidyverse", "knitr", "usethis", "gitcreds")
+
+```
+
+
+## Lab 6: Responses  
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# code to set up SQL
+db <- dbConnect(RSQLite::SQLite(), dbname = "epi560.sqlite")
+#dbListTables(db)
+
+```
+
+
+### Part I: Simple query nesting
+
+1. Write a query to generate a frequency table of reported hours of sleep among NHANES participants.
+This table should have two columns: one named SleepHours, showing the number of hours of reported
+sleep, and another named NumberReporting, showing the number of participants who reported the
+corresponding number of hours of sleep.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Question 1
+
+dbGetQuery(db, 
+"WITH SelDat AS (
+  SELECT 
+    s.SEQN, 
+    s.SLD012
+      FROM P_SLQ s
+  )
+  SELECT
+    COUNT(SEQN) AS N_Participants,
+    SUM(SLD012) AS TotalSleep
+      FROM SelDat"
+)
+
+```
+
+
+
+2. Now modify that query so you return only the row where people are sleeping for 7.0 hours
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Question 2
+
+dbGetQuery(db, 
+"WITH SelDat AS (
+  SELECT 
+    s.SEQN, 
+    s.SLD012
+      FROM P_SLQ s
+        WHERE SLD012 = 7.0
+  )
+  SELECT
+    COUNT(SEQN) AS N_Participants,
+    SUM(SLD012) AS Sleep
+      FROM SelDat"
+)
+
+```
+
+3. Now modify that query so you return only the modal row (i.e. the number the most people are reporting).
+Identify that row using a query.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Question 3
+
+##Identify the mode
+dbGetQuery(db,
+  "SELECT 
+    s.SLD012 AS Mode
+      FROM P_SLQ s 
+        GROUP BY s.SLD012
+        ORDER BY COUNT(*) DESC
+        LIMIT 1")
+
+
+##Query by the mode
+dbGetQuery(db, 
+"WITH SelMode AS (
+  SELECT 
+    s.SEQN, 
+    s.SLD012
+      FROM P_SLQ s
+        WHERE SLD012 = (
+  SELECT 
+    s.SLD012 AS Mode
+      FROM P_SLQ s 
+        GROUP BY s.SLD012
+        ORDER BY COUNT(*) DESC
+          LIMIT 1
+          )
+  )
+  SELECT
+    COUNT(SEQN) AS N_Participants,
+    SUM(SLD012) AS Sleep
+      FROM SelMode"
+)
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+dbDisconnect(db)
+```
+
+\newpage
+
+## Code Appendix  
+ 
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE} 
+```
