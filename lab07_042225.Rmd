@@ -186,7 +186,7 @@ ggplot(data_file, aes(x = WTINTPRP, y = WTMECPRP)) +
 
 **1. All the data seem to be present in each format as each plot looks similar, if not identical. I noticed that loading the zip and hdf5 files was slightly more complex than the other file types since I had to retrieve the file before I could read it in.**
 
-**2. The fastest file to load was the feather file which loaded in `r feathertime` seconds. This was `r parquettime-feathertime` seconds faster than it took the feather file to load. The slowest file to load was the Excel file which loaded in `r exceltime` seconds. This was `r exceltime-ziptime` seconds slower than the load time to load the Zip file.**
+**2. The fastest file to load was the feather file which loaded in `r feathertime` seconds. This was `r parquettime-feathertime` seconds faster than it took the parquettime file to load. The slowest file to load was the Excel file which loaded in `r exceltime` seconds. This was `r exceltime-ziptime` seconds slower than the load time to load the Zip file.**
 
 \newpage
 
