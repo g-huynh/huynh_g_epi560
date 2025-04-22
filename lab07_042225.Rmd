@@ -1,0 +1,196 @@
+---
+title: "EPI 560: Lab 07"
+author: "Gina Huynh"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    html_document:
+        df_print: paged
+        theme: cosmo
+        toc: yes
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "build") })
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Setup
+library(pacman)
+library(DBI)
+library(RSQLite)
+p_load("tidyverse", "knitr", "usethis", "gitcreds")
+
+if (!require("BiocManager", quietly = TRUE))
+install.packages("BiocManager")
+BiocManager::install("rhdf5")
+#Read in files
+library(readxl)
+library(haven)
+library(arrow)
+library(hdf5r)
+
+```
+
+
+## Lab 7: Responses  
+
+### Read in Files
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Question 1: Reading in files
+## Question 2: Read times
+# csv
+before <- Sys.time()
+pdemo_csv <- read.csv("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/R/data/P_DEMO.csv")
+after <- Sys.time()
+csvtime <- as.numeric(after - before, units = "secs")
+
+# Excel
+before <- Sys.time()
+pdemo_xlsx <- read_excel("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/R/data/P_DEMO.xlsx")
+after <- Sys.time()
+exceltime <- as.numeric(after - before, units = "secs")
+
+# Zip
+before <- Sys.time()
+#Call the first file in your zip folder csv_file
+csv_file <- unzip("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/R/data/P_DEMO.csv.zip", list = TRUE)$Name[1]
+#Read in the file
+pdemo_zip <- read.csv(unz("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/R/data/P_DEMO.csv.zip", csv_file))
+after <- Sys.time()
+ziptime <- as.numeric(after - before, units = "secs")
+
+# dta
+before <- Sys.time()
+pdemo_dta <- read_dta("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/R/data/P_DEMO.dta")
+after <- Sys.time()
+dtatime <- as.numeric(after - before, units = "secs")
+
+# feather
+before <- Sys.time()
+pdemo_feather <- read_feather("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/R/data/P_DEMO.feather")
+after <- Sys.time()
+feathertime <- as.numeric(after - before, units = "secs")
+
+# hdf5
+before <- Sys.time()
+#Explore the hdf5 file to see how many files there are
+h5file <- H5File$new("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/R/data/P_DEMO.hdf5", mode = "r")
+#h5file$ls()
+#Read in the file
+pdemo_hdf5 <- h5file[["P_DEMO"]][]
+after <- Sys.time()
+hdf5time <- as.numeric(after - before, units = "secs")
+
+# parquet
+before <- Sys.time()
+pdemo_parquet <- read_parquet("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/R/data/P_DEMO.parquet")
+after <- Sys.time()
+parquettime<-after - before
+parquettime <- as.numeric(after - before, units = "secs")
+
+
+# R Data
+before <- Sys.time()
+load("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/R/data/P_DEMO.RData")
+after <- Sys.time()
+rdatatime <- as.numeric(after - before, units = "secs")
+
+```
+
+
+### Plot Files
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Question 1: Plot files
+# csv
+ggplot(pdemo_csv, aes(x = WTINTPRP, y = WTMECPRP)) +
+  geom_point(color = "red") +
+  labs(
+    title = "Scatterplot of P_DEMO csv: Full Sample Interview vs. MEC Exam Weight",
+    x = "Interview Weight",
+    y = "MEC Exam Weight"
+  ) +
+  theme_bw()
+
+# Excel
+ggplot(pdemo_xlsx, aes(x = WTINTPRP, y = WTMECPRP)) +
+  geom_point(color = "orange") +
+  labs(
+    title = "Scatterplot of P_DEMO xlsx: Full Sample Interview vs. MEC Exam Weight",
+    x = "Interview Weight",
+    y = "MEC Exam Weight"
+  ) +
+  theme_bw()
+
+# Zip
+ggplot(pdemo_zip, aes(x = WTINTPRP, y = WTMECPRP)) +
+  geom_point(color = "gold") +
+  labs(
+    title = "Scatterplot of P_DEMO zip: Full Sample Interview vs. MEC Exam Weight",
+    x = "Interview Weight",
+    y = "MEC Exam Weight"
+  ) +
+  theme_bw()
+
+# dta
+ggplot(pdemo_dta, aes(x = WTINTPRP, y = WTMECPRP)) +
+  geom_point(color = "green") +
+  labs(
+    title = "Scatterplot of P_DEMO dta: Full Sample Interview vs. MEC Exam Weight",
+    x = "Interview Weight",
+    y = "MEC Exam Weight"
+  ) +
+  theme_bw()
+
+# feather
+ggplot(pdemo_feather, aes(x = WTINTPRP, y = WTMECPRP)) +
+  geom_point(color = "blue") +
+  labs(
+    title = "Scatterplot of P_DEMO feather: Full Sample Interview vs. MEC Exam Weight",
+    x = "Interview Weight",
+    y = "MEC Exam Weight"
+  ) +
+  theme_bw()
+
+# hdf5
+ggplot(pdemo_hdf5, aes(x = WTINTPRP, y = WTMECPRP)) +
+  geom_point(color = "cyan") +
+  labs(
+    title = "Scatterplot of P_DEMO hdf5: Full Sample Interview vs. MEC Exam Weight",
+    x = "Interview Weight",
+    y = "MEC Exam Weight"
+  ) +
+  theme_bw()
+
+
+# parquet
+ggplot(pdemo_parquet, aes(x = WTINTPRP, y = WTMECPRP)) +
+  geom_point(color = "purple") +
+  labs(
+    title = "Scatterplot of P_DEMO parquet: Full Sample Interview vs. MEC Exam Weight",
+    x = "Interview Weight",
+    y = "MEC Exam Weight"
+  ) +
+  theme_bw()
+
+
+# R Data
+ggplot(data_file, aes(x = WTINTPRP, y = WTMECPRP)) +
+  geom_point(color = "magenta") +
+  labs(
+    title = "Scatterplot of P_DEMO RData: Full Sample Interview vs. MEC Exam Weight",
+    x = "Interview Weight",
+    y = "MEC Exam Weight"
+  ) +
+  theme_bw()
+
+
+```
+
+**1. All the data seem to be present in each format as each plot looks similar, if not identical. I noticed that loading the zip and hdf5 files was slightly more complex than the other file types since I had to retrieve the file before I could read it in.**
+
+**2. The fastest file to load was the feather file which loaded in `r feathertime` seconds. This was `r parquettime-feathertime` seconds faster than it took the feather file to load. The slowest file to load was the Excel file which loaded in `r exceltime` seconds. This was `r exceltime-ziptime` seconds slower than the load time to load the Zip file.**
+
+\newpage
+
+## Code Appendix  
+ 
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE} 
+```
