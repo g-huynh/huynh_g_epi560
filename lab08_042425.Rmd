@@ -1,0 +1,133 @@
+---
+title: "EPI 560: Lab 08"
+author: "Gina Huynh"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    html_document:
+        df_print: paged
+        theme: cosmo
+        toc: yes
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "build") })
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Setup
+library(pacman)
+library(DBI)
+library(RSQLite)
+library(lubridate)
+p_load("tidyverse", "knitr", "usethis", "gitcreds")
+
+df <- read.csv("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/R/data/lab8_data.csv")
+```
+
+
+## Lab 8: Responses 
+
+### Part I. Dates
+
+1. Run the following code to create a new column called dx_date_local to the appropriate local time
+zones as given in the time_zones column. We will talk more about the loop next class – but what you
+need to know here is that we’re using force_tz on each row to ensure it knows what the right time zone
+is. That is, the force_tz function changes the time zone associated with a date-time object without
+changing the time itself.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Question 1
+df <- df %>%
+  mutate(dx_date = as.POSIXct(dx_date,
+                              format = "%Y-%m-%d %H:%M:%S",
+                              tz = "UTC"))
+df$dx_date_local = as.POSIXct(df$dx_date)
+
+for (i in 1:nrow(df)) {
+  df$dx_date_local[i] = as.POSIXct(force_tz(df$dx_date[i],
+                                            tz=df$time_zone[i]))
+}
+
+```
+
+
+2. Now that you have your dates correctly recorded in your dataframe, let’s standardize them so we can
+do math. Convert all times to UTC for standardization. Please use the lubridate package! Call this
+column dx_date_utc. Now, unlike in #1, you actually want to change the time, so force_tz is not the
+function for you. You want to convert it from the time in the local time zone to the time in UTC. At
+the end of this step, you will have all times recorded in UTC so that you can do math on them! Print
+the first 5 lines of your dataframe to check your work.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Question 2
+df <- df %>%
+  mutate(dx_date_utc = with_tz(dx_date_local, tzone = "UTC"))
+
+head(df, n = 5)
+```
+
+
+### Part II. Reshaping
+
+3. Now we want to reshape our data so that we can more easily see how many diagnoses each patient has,
+the time between them, etc. We are preparing to reshape wide, but need to set ourselves up first.
+
+a) To get started, run this block of code. Please read through it and understand what it is doing, but we won’t ask you to go through this step as the focus of this part is on reshaping:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Question 3a
+# We are calling the original df df_long because there are repeated id's in column id based on dx
+df_long <- df %>%
+  group_by(id) %>%
+  arrange(dx_date) %>%
+  mutate(rank = row_number()) %>%
+  ungroup()
+
+kable(head(df_long))
+
+```
+
+
+(b) Now you have the same dataframe but with the rank column added. This column will help you pivot
+wide. Describe why the rank column is helping here/what it is doing.
+
+**When converting from long to wide, we can use rank to specify which observation this diagnosis is for each participant (some participants have multiple diagnoses).** 
+
+
+4. Reshape the dataset from long to wide format, where each row represents a unique patient and columns represent their respective diagnosis dates and times. You should have the following columns: id, dx_1, dx_date_1, dx_2, dx_date_2, dx_3, dx_date_3, etc. Your final dataset should now have the same number of rows as you have IDs in your dataset. Please print the first 5 lines of your dataframe as well as the output of nrow({dataframe_name}).
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Question 4
+df_wide <- pivot_wider(df_long, 
+                       id, 
+                       names_from="rank",
+                       values_from="dx",
+                       names_prefix="dx_date_")
+
+head(df_wide, n = 5)
+nrow(df_wide)
+```
+
+
+### Part III: Aggregating
+
+4. Reshape the dataset from long to wide format, where each row represents a unique patient and columns represent their respective diagnosis dates and times. You should have the following columns: id, dx_1, dx_date_1, dx_2, dx_date_2, dx_3, dx_date_3, etc. Your final dataset should now have the same number of rows as you have IDs in your dataset. Please print the first 5 lines of your dataframe as well as the output of nrow({dataframe_name}).
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Part III Question 4
+
+```
+
+
+5. Using group_by, create a summary dataframe that contains the number of patients in each time interval category, including a category for patients with only one diagnosis. Using this summary dataframe, create a pretty table.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Question 5
+
+```
+
+
+\newpage
+
+## Code Appendix  
+ 
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE} 
+```
