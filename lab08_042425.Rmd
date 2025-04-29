@@ -19,7 +19,7 @@ library(RSQLite)
 library(lubridate)
 p_load("tidyverse", "knitr", "usethis", "gitcreds")
 
-df <- read.csv("C:/Users/stlp/OneDrive - UW/UW MPH/2025 Spring/EPI 560 - Data Management/R/data/lab8_data.csv")
+df <- read.csv("C:/Users/stlp/OneDrive - UW/UW MPH/0 2025 Spring/EPI 560 - Data Management/R/data/lab8_data.csv")
 ```
 
 
@@ -96,23 +96,46 @@ wide. Describe why the rank column is helping here/what it is doing.
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 ## Code for Question 4
-df_wide <- pivot_wider(df_long, 
-                       id, 
-                       names_from="rank",
-                       values_from="dx",
-                       names_prefix="dx_date_")
+# Pivot df_long and include diagnoses
+df_wide_dx <- pivot_wider(df_long,
+                          id_cols = id,
+                          names_from = "rank",
+                          values_from = "dx",
+                          names_prefix = "dx_")
+
+# Pivot df_long and include diagnoses dates
+df_wide_date <- pivot_wider(df_long,
+                            id_cols = id,
+                            names_from = "rank",
+                            values_from = "dx_date_utc",
+                            names_prefix = "dx_date_")
+
+# Left join by "id"
+df_wide <- left_join(df_wide_dx, df_wide_date, by = "id")
 
 head(df_wide, n = 5)
 nrow(df_wide)
+
 ```
 
 
 ### Part III: Aggregating
 
-4. Reshape the dataset from long to wide format, where each row represents a unique patient and columns represent their respective diagnosis dates and times. You should have the following columns: id, dx_1, dx_date_1, dx_2, dx_date_2, dx_3, dx_date_3, etc. Your final dataset should now have the same number of rows as you have IDs in your dataset. Please print the first 5 lines of your dataframe as well as the output of nrow({dataframe_name}).
+4. For patients with more than one diagnosis, calculate the time interval between the first two diagnoses. Create the following categories for the time between diagnosis 1 and 2: 0-1 days, 2-30 days, 31-180 days, 181-365 days, and >365 days. Create a new column in your dataset that contains these categories. You should have the following columns: id, dx_1, dx_date_1, dx_2, dx_date_2, dx_3, dx_date_3, etc. in addition to time_between_dxs, time_cat.
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 ## Code for Part III Question 4
+df_wide2 <- df_wide %>%
+  mutate(
+    time_between_dxs = round(time_length(interval(dx_date_1, dx_date_2), unit = "days")),
+    time_cat = case_when(
+      time_between_dxs <= 1 ~ "0-1 days",
+      time_between_dxs >= 2 & time_between_dxs <= 30 ~ "2-30 days",
+      time_between_dxs >= 31 & time_between_dxs <= 180 ~ "31-180 days",
+      time_between_dxs >= 181 & time_between_dxs <= 365 ~ "181-365 days",
+      time_between_dxs > 365 ~ ">365 days",
+    )
+  )
 
 ```
 
@@ -121,6 +144,13 @@ nrow(df_wide)
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 ## Code for Question 5
+df_summary <- df_wide2 %>%
+  group_by(time_cat) %>%
+  summarise(n_patients=n()) %>%
+  rename(`Time Between First Two Diagnoses` = time_cat,
+         `Number of Patients` = n_patients)
+
+kable(df_summary, align = "l", caption = "Number of Patients per Time Interval Category")
 
 ```
 
