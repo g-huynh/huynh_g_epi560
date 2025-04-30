@@ -1,0 +1,279 @@
+---
+title: "EPI 560: Lab 09"
+author: "Gina Huynh"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    html_document:
+        df_print: paged
+        theme: cosmo
+        toc: yes
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "build") })
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Setup
+library(pacman)
+library(DBI)
+library(RSQLite)
+library(lubridate)
+library(summarytools)
+p_load("tidyverse", "knitr", "usethis", "gitcreds")
+
+```
+
+
+## Lab 9: Responses 
+
+1. This lab will use two tables from the NHANES sleep disorders dataset, P_SLQ, and your audiometry
+dataset, P_AUQ. Retrieve these two tables using SQL and load them into R as one data frame.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Question 1
+db <- dbConnect(RSQLite::SQLite(), dbname = "epi560.sqlite")
+dat <- dbGetQuery(db, "SELECT * FROM 
+                  P_AUQ LEFT JOIN P_SLQ ON P_AUQ.SEQN = P_SLQ.SEQN")
+# Remove the duplicate SEQN column
+dat <- dat[, !duplicated(names(dat))]
+#summary(dat)
+
+dbDisconnect(db)
+
+```
+
+
+2. For our analysis, we will need to decide how to treat missingness. When a variable is coded as refused
+to answer, don’t know, missing, etc. - which of these are important for our analysis? Which of these
+can be recoded as missing for the purposes of our analysis of hearing impairment and sleep? Please
+make a decision about how you will treat these responses in your analysis (you are not going to be held
+to this decision!). Write down the decision you make.
+
+**I will treat all of these responses as missing for our analysis**
+
+
+3.Let’s make the judgment call that Refused, Don't know, Missing are all the same for the purposes of
+this analysis, and code them as missing (i.e. NA). 
+
+Write code to clean the SLQ300 and SLQ310 variables. Make sure you create a new dataset when you do this, so that the original data remains in your R session. 
+
+Print a frequency table, including showing how many values are NA in each variable before and after recoding
+
+Before recoding
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Question 3
+
+#Frequency of NA before recoding
+freq(is.na(dat$SLQ300))
+freq(is.na(dat$SLQ310))
+
+#77777=Refused, 99999=Don't Know, < blank >=Missing
+datcln <- dat %>%
+  mutate(SLQ300 = ifelse(SLQ300 %in% c(77777, 99999, ""), NA, SLQ300)) %>%
+  mutate(SLQ310 = ifelse(SLQ310 %in% c(77777, 99999, ""), NA, SLQ300))
+
+#Frequency of NA after recoding
+freq(is.na(datcln$SLQ300))
+freq(is.na(datcln$SLQ310))
+
+```
+
+
+4. Write a loop to apply this same logic to all four of the variables in the sleep quality dataset that use the same values for missing and don’t know as SLQ300 does. Note that the missing and don’t know values are different for different variables in the sleep quality dataset! Make sure you create a new dataset when you recode, so that the original data remains in your R session. 
+
+Print a frequency table for SLQ320 after you recode it. 
+
+Comment on whether you think this loop improved your process.
+Comment on why NHANES should or should not standardize missing and don’t know values.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Question 4
+#Four variables: SLQ300, SLQ310, SLQ320, SLQ330
+datclnfor <- dat
+slqvar <- c("SLQ300", "SLQ310", "SLQ320", "SLQ330")
+for (i in slqvar) {
+  datclnfor[[i]] <- ifelse(datclnfor[[i]] %in% c(77777, 99999, ""), NA, datclnfor[[i]])
+}
+
+#Frequency table for SLQ320 after recoding
+freq(is.na(datclnfor$SLQ320))
+
+```
+
+**Yes, this loop allowed me to recode 4 variables much faster than if I had to do it with several lines of mutate like in number 3.**
+
+**NHANES could use similar coding for missing and don't know values that would be impossible for continuous variables. However, some missingness is meaningful for analysis so I don't think NHANES could completely standardize the values for every variable.**
+
+
+5. Choose a few datasets and look through the variables you may want to use to look at hearing impairment’s
+association with sleep. Briefly tell us the variables you will focus on (and the datasets they come from).
+
+**I will focus on looking at whether having trouble hearing is associated with ever telling a doctor one had trouble sleeping and whether this association is modified by ever being told by a doctor that one has diabetes. Data for having trouble hearing will come from the AUQ054 variable in the dataset P_AUQ. Trouble sleeping will come from the SLQ050 variable in the dataset P_SLQ. Data for diabetes will come from the DIQ010 variable in the dataset P_DIQ.**
+
+6. Find the given variables. Write out a separate line of code for each of these variables to clean them in the way you would like. Make sure you create a new dataset when you do this, so that the original data remains in your R session. Print the first six lines of your resulting dataset (after running your line of code on 6 variables) using the kable function.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Question 6
+#Get data
+db2 <- dbConnect(RSQLite::SQLite(), dbname = "epi560.sqlite")
+dat2 <- dbGetQuery(db2, "SELECT 
+  a.SEQN, 
+  a.PAQ610,
+  s.ALQ121,
+  g.LBXGH,
+  d.AUQ054,
+  f.SLQ050
+FROM P_PAQ a
+FULL JOIN P_ALQ s ON a.SEQN = s.SEQN
+FULL JOIN P_GHB g ON a.SEQN = g.SEQN
+FULL JOIN P_AUQ d ON a.SEQN = d.SEQN
+FULL JOIN P_SLQ f ON a.SEQN = f.SEQN"
+)
+# Remove the duplicate SEQN column
+dat2 <- dat2[, !duplicated(names(dat2))]
+#summary(dat)
+dbDisconnect(db2)
+
+#Clean data
+datcln6 <- dat2 %>%
+  mutate(
+    PAQ610 = ifelse(PAQ610 %in% c(77, 99, "."), NA, PAQ610),
+    
+    ALQ121 = ifelse(ALQ121 %in% c(77, 99, "."), NA, ALQ121),
+    ALQ121 = case_when(
+      ALQ121 %in% c(0, 7:10) ~ "<=once monthly",
+      ALQ121 %in% 5:6 ~ "<=once weekly",
+      ALQ121 %in% 2:4 ~ ">2 times per week but not daily",
+      ALQ121 == 1 ~ "daily",
+      TRUE ~ NA_character_
+    ),
+    
+    LBXGH = ifelse(LBXGH %in% c("."), NA, LBXGH),
+    
+    AUQ054 = ifelse(AUQ054 %in% c(77, 99, "."), NA, AUQ054),
+    AUQ054 = case_when(
+      AUQ054 %in% 1:2 ~ "Good hearing",
+      AUQ054 %in% 3:5 ~ "Trouble hearing",
+      AUQ054 == 6 ~ "Deaf",
+      TRUE ~ NA_character_
+    ),
+    
+    SLQ050 = ifelse(SLQ050 %in% c(7, 9, "."), NA, SLQ050),
+    SLQ050 = case_when(
+      SLQ050 == 1 ~ "Yes",
+      SLQ050 == 2 ~ "No"
+  )) %>%
+  rename(
+    Days_Vigorous_Work = PAQ610,
+    Alcohol_Frequency = ALQ121,
+    Glycohemoglobin = LBXGH,
+    Hearing_Condition = AUQ054,
+    Sleep_Trouble = SLQ050
+  )
+
+#Print first 6 lines
+kable(head(datcln6), caption = "Cleaned Dataset for Number 6")
+
+```
+
+
+7. Write functions to:
+- Recode all continuous variables (listed above) to set any row with a value below the 5th percentile as the value of the 5th percentile, and anything row with a value above the 95th percentile as the value of the 95th percentile.
+- Recode all categorical variables (listed above) to change all 99’s to 9999.
+
+Using your functions, recode all variables in the dataset you developed in Question 6 and print the first six lines of your resulting dataset using the kable function. 
+
+Then plot a histogram of Glycohemoglobin % in both the original and the cleaned data.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Question 7
+# Function for continuous
+percentile <- function(x, probs = c(0.05, 0.95)) {
+  q <- quantile(x, probs = probs, na.rm = TRUE)
+  x[x < q[1]] <- q[1]
+  x[x > q[2]] <- q[2]
+  return(x)
+}
+
+# Function for categorical
+recodemissing <- function(df, vars) {
+  df %>%
+    mutate(across(all_of(vars), ~ replace(.x, .x == 99, 9999)))
+}
+
+# Categorical variable names
+cat_vars <- c("Alcohol_Frequency", "Hearing_Condition", "Sleep_Trouble")
+
+
+# Get dataset from Question 6 without dealing with missing categorical
+datcln6.5 <- dat2 %>%
+  mutate(
+    PAQ610 = ifelse(PAQ610 %in% c(77, "."), NA, PAQ610),
+      PAQ610 = case_when(
+        TRUE ~ as.character(PAQ610)
+      ),
+    ALQ121 = ifelse(ALQ121 %in% c(77, "."), NA, ALQ121),
+    ALQ121 = case_when(
+      ALQ121 %in% c(0, 7:10) ~ "<=once monthly",
+      ALQ121 %in% 5:6 ~ "<=once weekly",
+      ALQ121 %in% 2:4 ~ ">2 times per week but not daily",
+      ALQ121 == 1 ~ "daily",
+      TRUE ~ as.character(ALQ121)
+    ),
+    
+    LBXGH = ifelse(LBXGH %in% c("."), NA, LBXGH),
+    
+    AUQ054 = ifelse(AUQ054 %in% c(77, "."), NA, AUQ054),
+    AUQ054 = case_when(
+      AUQ054 %in% 1:2 ~ "Good hearing",
+      AUQ054 %in% 3:5 ~ "Trouble hearing",
+      AUQ054 == 6 ~ "Deaf",
+      TRUE ~ as.character(AUQ054)
+    ),
+    
+    SLQ050 = ifelse(SLQ050 %in% c(7, 9, "."), NA, SLQ050),
+    SLQ050 = case_when(
+      SLQ050 == 1 ~ "Yes",
+      SLQ050 == 2 ~ "No"
+  )) %>%
+  rename(
+    Days_Vigorous_Work = PAQ610,
+    Alcohol_Frequency = ALQ121,
+    Glycohemoglobin = LBXGH,
+    Hearing_Condition = AUQ054,
+    Sleep_Trouble = SLQ050
+  )
+
+# Apply both functions
+datcln7 <- datcln6.5 %>%
+  mutate(
+    Days_Vigorous_Work = percentile(as.numeric(Days_Vigorous_Work)),
+    Glycohemoglobin = percentile(as.numeric(Glycohemoglobin))
+  ) %>%
+  recodemissing(cat_vars)
+
+
+#summary(datcln6$Glycohemoglobin)
+#summary(datcln7$Glycohemoglobin)
+#table(datcln7$Hearing_Condition, useNA = "ifany")
+
+# Print using kable
+kable(head(datcln7), caption = "Cleaned Dataset for Number 7")
+
+
+# Histogram of glycohemoglobin
+hist(dat2$LBXGH,
+     main = "Histogram of Glycohemoglobin in Original Dataset",
+     xlab = "Glycohemoglobin (%)")
+
+hist(datcln7$Glycohemoglobin,
+     main = "Histogram of Glycohemoglobin in Cleaned Dataset",
+     xlab = "Glycohemoglobin (%)")
+
+```
+
+\newpage
+
+## Code Appendix  
+ 
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE} 
+```
