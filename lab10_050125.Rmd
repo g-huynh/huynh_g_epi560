@@ -1,0 +1,143 @@
+---
+title: "EPI 560: Lab 10"
+author: "Gina Huynh"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    html_document:
+        df_print: paged
+        theme: cosmo
+        toc: yes
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "build") })
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Setup
+library(pacman)
+library(DBI)
+library(RSQLite)
+library(lubridate)
+library(summarytools)
+p_load("tidyverse", "knitr", "usethis", "gitcreds")
+
+```
+
+
+## Lab 10: Responses 
+
+### Part I:
+
+**My plan is to look at whether having trouble hearing is associated with ever telling a doctor one had trouble sleeping, adjusted for age, and whether this association is modified by glycohemoglobin %.**
+
++ Having trouble hearing (Categorical): P_AUQ / AUQ054
+
++ Telling a doctor one had trouble sleeping (Binary): P_SLQ / SLQ050
+
++ Age at screening (Continuous): P_DEMO / RIDAGEYR
+
++ Glycohemoglobin (Continuous): P_GHB/ LBXGH
+
+
+#### Retrieve the data you want using RSQLite - Note that you will need the same data in R for future
+assignments, so write your query so you can re-use it. How many rows and columns do you have?
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Part I
+#Get data
+db <- dbConnect(RSQLite::SQLite(), dbname = "epi560.sqlite")
+dat <- dbGetQuery(db, "SELECT 
+  a.SEQN, 
+  a.AUQ054 AS Hearing,
+  s.SLQ050 AS Sleep,
+  g.LBXGH AS Glyco,
+  d.RIDAGEYR AS Age
+FROM P_AUQ a
+LEFT JOIN P_SLQ s ON a.SEQN = s.SEQN
+FULL JOIN P_GHB g ON a.SEQN = g.SEQN
+FULL JOIN P_DEMO d ON a.SEQN = d.SEQN"
+)
+# Remove the duplicate SEQN column
+dat <- dat[, !duplicated(names(dat))]
+dbDisconnect(db)
+
+#Clean data
+datcln <- dat %>%
+  mutate(
+    Hearing = ifelse(Hearing %in% c(77, 99, "."), NA, Hearing),
+    Hearing = case_when(
+      Hearing %in% 1:2 ~ "Good",
+      Hearing %in% 3:5 ~ "Trouble",
+      Hearing == 6 ~ "Deaf",
+      TRUE ~ NA_character_
+    ),
+    
+    Sleep = ifelse(Sleep %in% c(7, 9, "."), NA, Sleep),
+    Sleep = case_when(
+      Sleep == 1 ~ "Yes",
+      Sleep == 2 ~ "No"
+    ),
+    
+    Glyco = ifelse(Glyco %in% c("."), NA, Glyco),
+    
+    Age = ifelse(Age %in% c("."), NA, Age)
+  )
+
+
+#Number of rows and columns
+dim(dat)
+
+```
+**I have `r dim(dat)[1]` rows and `r dim(dat)[2]` columns in my dataset.**
+
+
+### Part II: Get a sense of the distributional statistics of the data
+
+#### (a) Make histograms or scatterplots of at least 2 numeric columns that you think will be useful.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Part IIa
+hist(datcln$Age,
+     main = "Age")
+
+hist(datcln$Glyco,
+     main = "Glycohemoglobin")
+
+```
+
+
+#### (b) Make bar plots for at least 2 categorical columns that you think will be useful.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Part IIb
+barplot(table(datcln$Hearing),
+     main = "Hearing",
+     ylab = "count",
+     xlab = "Hearing Status")
+
+barplot(table(datcln$Sleep),
+     main = "Trouble Sleeping",
+     ylab = "count",
+     xlab = "Trouble Sleeping")
+
+```
+
+
+#### (c) Make a table with summary statistics for each variable, including missingness
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Part IIc
+
+library(summarytools)
+print(dfSummary(datcln[ , !(names(datcln) %in% "SEQN")]))
+
+#library(skimr)
+#skim(datcln)
+
+```
+
+
+\newpage
+
+## Code Appendix  
+ 
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE} 
+```
