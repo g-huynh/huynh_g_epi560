@@ -1,0 +1,158 @@
+---
+title: "EPI 560: Lab 11"
+author: "Gina Huynh"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    html_document:
+        df_print: paged
+        theme: cosmo
+        toc: yes
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "build") })
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Setup
+library(pacman)
+library(DBI)
+library(RSQLite)
+library(lubridate)
+library(summarytools)
+p_load("tidyverse", "knitr", "usethis", "gitcreds")
+
+```
+
+
+## Lab 11: Responses 
+
+### Part I: Planning and Documentation
+
+**My plan is to look at whether having trouble hearing is associated with ever telling a doctor one had trouble sleeping, adjusted for age, and whether this association is modified by glycohemoglobin %.**
+
+#### Question 1
+
+a) SEQL tables and / b) variables:
+
++ Having trouble hearing (Categorical): P_AUQ / AUQ054
+
++ Telling a doctor one had trouble sleeping (Binary): P_SLQ / SLQ050
+
++ Age at screening (Continuous): P_DEMO / RIDAGEYR
+
++ Glycohemoglobin (Continuous): P_GHB/ LBXGH
+
+
+c) Cleaning steps: 
+
+1. rename variables
+
+2. recategorize hearing 1-2 as "Good", 3-5 as "Trouble", 6 as "Deaf" 
+
+3. recode 77, 99, 7, 9, "." as NA
+
+4. relabel 1/2 as "Yes"/"No"
+
+5. Drop participants who are "Deaf"
+
+
+#### Question 2
+Steps 1-4 will make reading the code and output easier. Step 5 may shift the cleaned data slightly from the raw data if there was an association between deafness and having trouble hearing.
+
+#### Question 3
+Steps 1-4 are things that I know I want to change. There is room for subjective decision making for step 5 in a sensitivity analysis.
+
+
+### Part II: Data Cleaning
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Question 4
+#Get data
+db <- dbConnect(RSQLite::SQLite(), dbname = "epi560.sqlite")
+dat <- dbGetQuery(db, "SELECT 
+  a.SEQN, 
+  a.AUQ054 AS Hearing,
+  s.SLQ050 AS Sleep,
+  g.LBXGH AS Glyco,
+  d.RIDAGEYR AS Age
+FROM P_AUQ a
+LEFT JOIN P_SLQ s ON a.SEQN = s.SEQN
+FULL JOIN P_GHB g ON a.SEQN = g.SEQN
+FULL JOIN P_DEMO d ON a.SEQN = d.SEQN"
+)
+# Remove the duplicate SEQN column
+dat <- dat[, !duplicated(names(dat))]
+dbDisconnect(db)
+
+#Clean data
+##Raw data fixing missing
+datcln <- dat %>%
+  mutate(
+    Hearing = ifelse(Hearing %in% c(77, 99, "."), NA, Hearing),
+    
+    Sleep = ifelse(Sleep %in% c(7, 9, "."), NA, Sleep),
+    Sleep = case_when(
+      Sleep == 1 ~ "Yes",
+      Sleep == 2 ~ "No"
+    ),
+    
+    Glyco = ifelse(Glyco %in% c("."), NA, Glyco),
+    
+    Age = ifelse(Age %in% c("."), NA, Age)
+  )
+
+##Cleaned data for Lab 11
+datcln_lab11 <- dat %>%
+  mutate(
+    Hearing = ifelse(Hearing %in% c(77, 99, "."), NA, Hearing),
+    Hearing = case_when(
+      Hearing %in% 1:2 ~ "Good",
+      Hearing %in% 3:5 ~ "Trouble",
+      Hearing == 6 ~ "Deaf",
+      TRUE ~ NA_character_
+    ),
+    
+    Sleep = ifelse(Sleep %in% c(7, 9, "."), NA, Sleep),
+    Sleep = case_when(
+      Sleep == 1 ~ "Yes",
+      Sleep == 2 ~ "No"
+    ),
+    
+    Glyco = ifelse(Glyco %in% c("."), NA, Glyco),
+    
+    Age = ifelse(Age %in% c("."), NA, Age)
+  ) %>%
+  filter(Hearing != "Deaf")
+
+```
+
+
+#### Question 5
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Hearing Raw
+barplot(table(datcln$Hearing),
+     main = "Hearing Pre-Cleaning",
+     ylab = "count",
+     xlab = "Hearing Status")
+
+## Hearing Cleaned
+barplot(table(datcln_lab11$Hearing),
+     main = "Hearing Post-Cleaning",
+     ylab = "count",
+     xlab = "Hearing Status")
+
+```
+
+**As I expected, it cleaning reduced relatively small counts from the "Deaf" group.**
+
+
+#### Question 6
+I will write my data out as a csv file so that it does not have to run again as a function. This is also more familiar to me than turning my data cleaning into a function. 
+
+
+\newpage
+
+## Code Appendix  
+ 
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE} 
+```
