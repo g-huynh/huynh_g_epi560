@@ -1,0 +1,249 @@
+---
+title: "EPI 560: Lab 12"
+author: "Gina Huynh"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    html_document:
+        df_print: paged
+        theme: cosmo
+        toc: yes
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "build") })
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Setup
+library(pacman)
+library(DBI)
+library(RSQLite)
+library(lubridate)
+library(summarytools)
+p_load("tidyverse", "knitr", "usethis", "gitcreds")
+
+```
+
+
+## Lab 12: Responses 
+
+### Part I: Get the Data
+
+a) SEQL tables and / b) variables:
+
++ Age at screening (Continuous): P_DEMO / RIDAGEYR
+
++ Past year alcohol usage: P_ALQ / ALQ121
+
++ Telling a doctor one had trouble sleeping (Binary): P_SLQ / SLQ050
+
++ Having trouble hearing (Categorical): P_AUQ / AUQ054
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Part I
+#Get data
+db <- dbConnect(RSQLite::SQLite(), dbname = "epi560.sqlite")
+dat <- dbGetQuery(db, "SELECT 
+  a.SEQN, 
+  a.AUQ054 AS HearingTrouble,
+  s.SLQ050 AS Sleep,
+  g.ALQ121 AS Alcohol,
+  g.ALQ111 AS AlcoholEver,
+  g.ALQ151 AS AlcoholBinge,
+  d.RIDAGEYR AS Age
+FROM P_AUQ a
+LEFT JOIN P_SLQ s ON a.SEQN = s.SEQN
+FULL JOIN P_ALQ g ON a.SEQN = g.SEQN
+FULL JOIN P_DEMO d ON a.SEQN = d.SEQN"
+)
+# Remove the duplicate SEQN column
+dat <- dat[, !duplicated(names(dat))]
+dbDisconnect(db)
+
+##Cleaning
+datcln <- dat %>%
+  mutate(
+    HearingTrouble = ifelse(HearingTrouble %in% c(77, 99, "."), NA, HearingTrouble),
+    HearingTrouble = case_when(
+      HearingTrouble %in% 3:6 ~ "Yes",
+      HearingTrouble %in% 1:2 ~ "No",
+      TRUE ~ NA_character_
+    ),
+    
+    Sleep = ifelse(Sleep %in% c(7, 9, "."), NA, Sleep),
+    Sleep = case_when(
+      Sleep == 2 ~ 0,
+      Sleep == 1 ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    Alcohol = ifelse(Alcohol %in% c(77, 99, "."), NA, Alcohol),
+    
+    AlcoholEver = ifelse(AlcoholEver %in% c(7, 9, "."), NA, AlcoholEver),
+    
+    AlcoholBinge = ifelse(AlcoholBinge %in% c(7, 9, "."), NA, AlcoholBinge),
+    
+    Age = ifelse(Age %in% c("."), NA, Age)
+  )
+
+```
+
+
+## Part II: Fit a Model
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Code for Part II
+options(scipen = 999)
+
+##Factor alcohol usage
+datcln$Alcohol <- as.factor(datcln$Alcohol)
+
+##Poisson Regression
+mod <- glm(Sleep ~ HearingTrouble + Age + Alcohol, family = poisson, data = datcln)
+summary(mod)
+
+#Relative risks
+exp(coef(mod))
+#Confidence interval
+exp(confint(mod))
+
+```
+
+## Part III: Functionalize your model
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Code for Part III
+##Step 1
+rrci <- function(formula, dataset) {
+  print("called my function")
+}
+rrci(formula='Sleep ~ HearingTrouble + Age + Alcohol', dataset=datcln)
+
+
+##Step 2
+rrci <- function(formula, dataset) {
+  print(sprintf("called rrci with %s", deparse(formula)))
+}
+rrci(formula = Sleep ~ HearingTrouble + Age + Alcohol, dataset = datcln)
+
+
+##Step 3
+rrci <- function(formula, dataset) {
+  print(sprintf("called rrci with %s", deparse(formula)))
+  mod <- glm(formula, datcln, family=poisson)
+  print("fit model successfully")
+}
+rrci(formula = Sleep ~ HearingTrouble + Age + Alcohol, dataset = datcln)
+
+
+##Complete Function
+rrci <- function(formula, dataset) {
+
+  mod <- glm(formula, dataset, family=poisson)
+  
+  tidy_mod <- broom::tidy(mod, conf.int = TRUE, exponentiate = TRUE)
+  
+  main_var <- attr(terms(formula), "term.labels")[1]
+  main_term <- tidy_mod[grepl(paste0("^", main_var), tidy_mod$term), ]
+
+  return(list(
+    relative_risk = main_term$estimate[1],
+    ci_95 = c(main_term$conf.low[1], main_term$conf.high[1])
+  ))
+}
+
+rrci(formula = Sleep ~ HearingTrouble + Age + Alcohol, dataset = datcln)
+
+```
+
+## Part IV: Consider different categorizations for alcohol use and age
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Code for Part IV
+##1) Lifetime Ever Drinkers/Never Drinkers
+datcln1 <- datcln %>%
+  mutate(
+    Alcohol = case_when(
+      AlcoholEver == 1 ~ 1,
+      AlcoholEver == 2 ~ 0,
+      TRUE ~ NA_real_
+    ))
+
+##2) Past-year Ever Drinkers/Past-year Never Drinkers
+datcln2 <- datcln %>%
+  mutate(
+    Alcohol = case_when(
+      Alcohol != 0 ~ 1,
+      Alcohol == 0 ~ 0,
+      TRUE ~ NA_real_
+    ))
+
+##3) Past-year Ever-binge Drinkers/Never-binge Drinkers
+datcln3 <- datcln %>%
+  mutate(
+    Alcohol = case_when(
+      AlcoholBinge == 1 ~ 1,
+      AlcoholBinge == 2 ~ 0,
+      TRUE ~ NA_real_
+    ))
+
+##4) Past-year Never Drinkers/Daily Drinkers/In-between Drinkers
+datcln4 <- datcln %>%
+  mutate(
+    Alcohol = case_when(
+      #Never
+      Alcohol == 0 ~ 0,
+      #In-between
+      Alcohol %in% 2:10 ~ 1,
+      #Daily
+      Alcohol == 1 ~ 2,
+      TRUE ~ NA_real_
+    ))
+
+```
+
+## Part V: Use the Function
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Code for Part V
+#Estimate RR in original dataset
+rrci(formula = Sleep ~ HearingTrouble + Age + Alcohol, dataset = datcln)
+
+#Estimate RR in the first (lifetime ever/never drinkers) dataset
+rrci(formula = Sleep ~ HearingTrouble + Age + Alcohol, dataset = datcln1)
+
+```
+
+## Part VI: Loop over all datasets
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Code for Part VI
+datasets <- list(
+  "1) Original Dataset" = datcln,
+  "2) Lifetime Ever Drinkers/Never Drinkers" = datcln1,
+  "3) Past-year Ever Drinkers/Never Drinkers" = datcln2,
+  "4) Past-year Ever-binge Drinkers/Never-binge Drinkers" = datcln3,
+  "5) Past-year Never Drinkers/Daily Drinkers/In-between Drinkers" = datcln4
+)
+
+rr_values <- c()
+
+for (name in names(datasets)) {
+  result <- rrci(Sleep ~ HearingTrouble + Age + Alcohol, dataset = datasets[[name]])
+  rr_values[name] <- result$relative_risk
+}
+
+rr_table <- data.frame(
+  labels = names(rr_values),
+  relative_risks = unname(rr_values)
+)
+
+print(rr_table)
+
+```
+
+
+\newpage
+
+## Code Appendix  
+ 
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE} 
+```
