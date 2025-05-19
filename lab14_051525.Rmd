@@ -1,0 +1,284 @@
+---
+title: "EPI 560: Lab 14"
+author: "Gina Huynh"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    html_document:
+        df_print: paged
+        theme: cosmo
+        toc: yes
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "build") })
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Setup
+library(pacman)
+library(DBI)
+library(RSQLite)
+library(lubridate)
+library(summarytools)
+library(mice)
+p_load("tidyverse", "knitr", "usethis", "gitcreds")
+
+```
+
+**What is the association between auditory impairments and quality of sleep in the United States?**
+
+## Lab 14: Responses 
+
+### Part 1: Get the data
+
+Using SQL, load data on age, trouble sleeping, past year alcohol usage, ever
+alcohol usage, past-year binge drinking (use ALQ142), ever reporting trouble sleeping to your doctor, and
+self-reported hearing conditions being worse than excellent or good. Make P_SLQ your primary dataset
+and be sure to use LEFT JOINs so you do not drop rows that are not represented in one of the other tables.
+Your final dataset should have 10195 rows.
+
+a) SEQL tables and / b) variables:
+
++ Age at screening (Continuous): P_DEMO / RIDAGEYR
+
++ Ever alcohol usage: P_ALQ / ALQ111
+
++ Past year alcohol usage: P_ALQ / ALQ121
+
++ Past-year binge drinking: P_ALQ / ALQ141
+
++ Telling a doctor one had trouble sleeping (Binary): P_SLQ / SLQ050
+
++ Having trouble hearing (Categorical): P_AUQ / AUQ054
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code for Part I
+#Get data
+db <- dbConnect(RSQLite::SQLite(), dbname = "epi560.sqlite")
+dat <- dbGetQuery(db, "SELECT 
+  a.SEQN, 
+  a.AUQ054 AS HearingTrouble,
+  s.SLQ050 AS Sleep,
+  g.ALQ111 AS AlcoholEver,
+  g.ALQ121 AS AlcoholPastYear,
+  g.ALQ142 AS AlcoholBinge,
+  d.RIDAGEYR AS Age
+FROM P_SLQ s
+LEFT JOIN P_AUQ a ON s.SEQN = a.SEQN
+LEFT JOIN P_ALQ g ON s.SEQN = g.SEQN
+LEFT JOIN P_DEMO d ON s.SEQN = d.SEQN"
+)
+# Remove the duplicate SEQN column
+dat <- dat[, !duplicated(names(dat))]
+dbDisconnect(db)
+
+```
+
+
+## Part 2: Examine the missingness
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for Part 2
+md.pattern(dat, plot = T, rotate.names = T)
+
+```
+
+**Yes, this is monotonic missingness. Everyone who is missing Alcohol Binge is also missing AlcoholPastYear in the third row and so on.**
+
+
+## Part 3: Is the missing data about skip patterns?
+
+Consider the data cleaning we have previously done with these data, in which we determininsticly filled in skip patterns for alcohol usage when we could. Refer to the documentation for each of the variables you have loaded to understand and fill in for skip patterns.
+
+Are any data still missing?
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for Part 3
+# Deterministic imputation
+dat_3 <- dat %>%
+  mutate(
+    AlcoholPastYear = case_when(
+      AlcoholEver == 2 & is.na(AlcoholPastYear) ~ 0,
+      TRUE ~ AlcoholPastYear
+    ),
+    AlcoholBinge = case_when(
+      AlcoholEver == 2 & is.na(AlcoholBinge) ~ 0,
+      AlcoholPastYear == 0 & is.na(AlcoholBinge) ~ 0,
+      TRUE ~ AlcoholBinge
+    )
+  )
+
+md.pattern(dat_3, plot = T, rotate.names = T)
+
+# Data still missing?
+remaining_missing <- sum(is.na(dat_3))
+
+```
+
+**Anyone who has never had any drink of alcohol (ALQ111==2) was not asked any other alcohol-related questions. Anyone who never drank in the past year (ALQ121==0) was not asked any other alcohol-related questions.**
+
+**After deterministically imputing, there are still `r remaining_missing` participants with missing data.**
+
+
+## Part 4: Consider what the target population was. Were data suppressed?
+
+Check the alcohol use documentation. Are all the respondents in the target population? Remove rows from your dataset referring to individuals not in the target population.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for Part 4
+dat_4 <- dat_3 %>%
+  filter(Age >= 18)
+
+md.pattern(dat_4, plot = T, rotate.names = T)
+
+```
+
+**Since all participants age 12+ were eligible, they were included in the data, but are not in the target population of age 18+. Participants younger than 18 were removed from the dataset.**
+
+
+
+## Part 4.2: Is there data where you have values that you should recode as missing? 
+
+Now consider the data cleaning lab in which we have previously worked with these data. Recall that we recoded don’t know and refused as missing. Let’s assume that we will impute those values. Recode all your don’t know and refused values as missing.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for Part 4.2
+dat_4_2 <- dat_4 %>%
+  mutate(
+    HearingTrouble = ifelse(HearingTrouble %in% c(77, 99), NA, HearingTrouble),
+    Sleep = ifelse(Sleep %in% c(7, 9), NA, Sleep),
+    AlcoholEver = ifelse(AlcoholEver %in% c(7, 9), NA, AlcoholEver),
+    AlcoholPastYear = ifelse(AlcoholPastYear %in% c(77, 99), NA, AlcoholPastYear),
+    AlcoholBinge = ifelse(AlcoholBinge %in% c(7, 9), NA, AlcoholBinge)
+  )
+
+md.pattern(dat_4_2, plot = T, rotate.names = T)
+
+```
+
+
+## Part 5: Handle the missingness and see how much it matters
+
+First, let’s estimate the odds ratio for hearing impairment (defined as hearing worse than excellent or good) and trouble sleeping (defined as ever telling a doctor you had trouble sleeping), conditional on past year alcohol use.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for Part 5
+datcln <- dat_4_2 %>%
+  mutate(
+    HearingTrouble = factor(case_when( #Binary
+      HearingTrouble %in% 3:6 ~ 1,
+      HearingTrouble %in% 1:2 ~ 0,
+      TRUE ~ NA_real_
+    )),
+    
+    Sleep = factor(case_when(
+      Sleep == 2 ~ 0,
+      Sleep == 1 ~ 1,
+      TRUE ~ NA_real_
+    )),
+    
+    AlcoholPastYear = factor(AlcoholPastYear),
+  )
+
+```
+
+
+### Part 5.1 Complete Case Analysis
+
+First, estimate the odds ratio and 95% confidence interval in respondents with complete data.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for Part 5.1
+mod_cc <- glm(Sleep ~ HearingTrouble + AlcoholPastYear,
+           data = datcln,
+           family = binomial)
+
+or_cc <- exp(coef(mod_cc))
+ci_cc <- exp(confint(mod_cc))
+
+results_cc <- data.frame(
+  Term = names(or_cc),
+  OR = round(or_cc, 3),
+  CI_Lower = round(ci_cc[, 1], 3),
+  CI_Upper = round(ci_cc[, 2], 3)
+)
+
+```
+
+
+### Part 5.2 Single Hot-Deck Imputation
+
+Next, perform a ‘hot deck’ single imputation where you fill in missing values by selecting randomly from
+other records matching the existing variables.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for Part 5.2
+#install.packages("VIM")
+library(VIM)
+datcln_hd <- hotdeck(datcln, imp_var = FALSE)
+#colSums(is.na(datcln_hd))
+
+mod_hd <- glm(Sleep ~ HearingTrouble + AlcoholPastYear,
+           data = datcln_hd,
+           family = binomial)
+
+or_hd <- exp(coef(mod_hd))
+ci_hd <- exp(confint(mod_hd))
+
+results_hd <- data.frame(
+  Term = names(or_hd),
+  OR = round(or_hd, 3),
+  CI_Lower = round(ci_hd[, 1], 3),
+  CI_Upper = round(ci_hd[, 2], 3)
+)
+
+```
+
+
+### Part 5.3 Multiple Imputation
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for Part 5.3
+imputations <- mice(datcln, m = 10, seed = 12345)
+imputation_model_fit <- with(imputations, glm(Sleep ~ HearingTrouble + AlcoholPastYear, datcln, family=binomial))
+results_mi <- summary(pool(imputation_model_fit), conf.int = TRUE, exponentiate = TRUE) %>%
+  rename(
+    Term = term,
+    OR = estimate,
+    CI_Lower = conf.low,
+    CI_Upper = conf.high
+  )
+
+```
+
+
+### Part 5.4 Compare Results
+
+Print a table with your results from the complete case analysis, the single imputation, and the multiple imputation
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for Part 5.4
+results_cc <- results_cc %>% mutate(missing_data_approach = "Complete Case")
+results_hd <- results_hd %>% mutate(missing_data_approach = "Hot Deck Single Imputation")
+results_mi <- results_mi %>% mutate(missing_data_approach = "Multiple Imputation")
+
+combined_results <- bind_rows(results_cc, results_hd, results_mi) %>%
+  filter(Term == "HearingTrouble1") %>%    
+  select(missing_data_approach, OR, CI_Lower, CI_Upper)
+
+kable(combined_results, digits = 3, row.names = FALSE)
+
+```
+
+
+### Part 5.5 Interpret Results
+
+Did imputation meaningfully affect your association estimates?
+
+**Imputation did not meaningfully affect my association estimates or confidence intervals.**
+
+
+\newpage
+
+## Code Appendix  
+ 
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE} 
+```
