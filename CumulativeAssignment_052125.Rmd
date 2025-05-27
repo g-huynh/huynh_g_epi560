@@ -1,0 +1,333 @@
+---
+title: "EPI 560: Cumulative Assignment"
+author: "Gina Huynh"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+header-includes:
+   - \setlength\parindent{24pt}
+output: 
+    pdf_document:
+        df_print: paged
+        toc: yes
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "build") })
+---
+
+\newpage
+
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Setup
+library(pacman)
+library(DBI)
+library(RSQLite)
+library(lubridate)
+library(summarytools)
+library(mice)
+
+p_load("tidyverse", "knitr", "usethis", "gitcreds")
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## 1. Code to retrieve data
+p_load(`DBI`)
+connection <- dbConnect(RSQLite::SQLite(), dbname = "epi560.sqlite")
+dat <- dbGetQuery(connection, 
+  "SELECT P_AUQ.SEQN as id,
+          P_AUQ.AUQ054 as HearingTrouble,
+          P_SLQ.SLD012 as SleepDeficit,
+          P_DEMO.RIDAGEYR as Age,
+          P_ALQ.ALQ121 as AlcoholPastYear,
+          P_AUX.AUXLOEXC as ExCerumenL,
+          P_AUX.AUXROEXC as ExCerumenR,
+          P_MCQ.MCQ160c as HeartDisease
+   FROM P_AUQ
+     LEFT JOIN P_SLQ ON P_AUQ.SEQN = P_SLQ.SEQN
+     LEFT JOIN P_DEMO ON P_AUQ.SEQN = P_DEMO.SEQN
+     LEFT JOIN P_ALQ ON P_AUQ.SEQN = P_ALQ.SEQN
+     LEFT JOIN P_AUX ON P_AUQ.SEQN = P_AUX.SEQN
+     LEFT JOIN P_MCQ ON P_AUQ.SEQN = P_MCQ.SEQN
+   WHERE P_DEMO.RIDAGEYR >= 18"
+)
+
+dbDisconnect(connection)
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code to clean data
+
+datnomiss <- dat %>%
+  mutate(
+    HearingTrouble = ifelse(HearingTrouble %in% c(77, 99, "."), NA, HearingTrouble),
+    HearingTrouble = case_when(
+      HearingTrouble %in% 3:6 ~ 1,
+      HearingTrouble %in% 1:2 ~ 0,
+      TRUE ~ NA_real_
+    ),
+    
+    SleepDeficit = ifelse(SleepDeficit %in% c(7, 9, "."), NA, SleepDeficit),
+    SleepDeficit = case_when(
+      SleepDeficit > 6 ~ 0,
+      SleepDeficit <= 6 ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    Age = ifelse(Age %in% c("."), NA, Age
+    ),
+
+    AlcoholPastYear = ifelse(AlcoholPastYear %in% c(77, 99, "."), NA, AlcoholPastYear
+    ),
+    
+    ExCerumen = case_when(
+      ExCerumenL == 1 ~ 1,
+      ExCerumenR == 1 ~ 1,
+      ExCerumenL == 2 ~ 0,
+      ExCerumenL == 2 ~ 0,
+      TRUE ~ NA_real_
+    ),
+    
+    HeartDisease = ifelse(HeartDisease %in% c(7, 9, "."), NA, HeartDisease),
+    HeartDisease = case_when(
+      HeartDisease == 2 ~ 0,
+      HeartDisease == 1 ~ 1,
+      TRUE ~ NA_real_
+    )
+  )
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for descriptive analysis
+## Descriptive analysis of age
+ggplot(dat, aes(x = Age)) +
+  geom_histogram(binwidth = 5, color = "black", fill = "gray70") +
+  labs(
+    title = "Figure 1: Age Distribution of Participants",
+    x = "Age (years)",
+    y = "Count"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12)
+  )
+###Frequency changes at about 60 so will stratify by <60, and >=60
+
+## Descriptive analysis of past year alcohol
+tab <- table(datnomiss$AlcoholPastYear, useNA="always")
+tab_df <- as.data.frame(tab)
+###Logically makes sense to operationalize alcohol as never, in-between, and daily drinker. No categories have very small counts.
+
+
+## Descriptive analysis of excessive cerumen
+HearingTrouble_ExCerumen <- table(datnomiss$HearingTrouble,
+      datnomiss$ExCerumen,
+      useNA="always")
+###No very small counts
+
+
+## Descriptive analysis of heart disease
+HearingTrouble_HeartDisease<- table(datnomiss$HearingTrouble,
+      datnomiss$HeartDisease,
+      useNA="always")
+###Seems to be a different proportion of Heart Disease:Hearing Trouble
+
+## Missingness
+md.pattern(datnomiss, plot = T, rotate.names = T)
+
+
+
+## Recode based on descriptive analysis
+datcln <- datnomiss %>%
+  mutate(
+    AgeSixtyPlus = case_when(
+      Age >= 60 ~ 1,
+      Age < 60 ~ 0
+    ),
+
+    AlcoholPastYear = case_when(
+      #Never drinker
+      AlcoholPastYear == 0 ~ 0,
+      #In-between
+      AlcoholPastYear %in% 2:10 ~ 1,
+      #Daily
+      AlcoholPastYear == 1 ~ 2,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  select(-Age, -ExCerumenL, -ExCerumenR)
+
+##Factor alcohol usage
+datcln$AlcoholPastYear <- as.factor(datcln$AlcoholPastYear)
+
+```
+
+\newpage
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for a Table 1
+library(tableone)
+
+### Create new clean dataset for Table 1: dattab1
+dattab1<-datcln[, c("HearingTrouble", "SleepDeficit", "AgeSixtyPlus", 
+                 "AlcoholPastYear", "ExCerumen", "HeartDisease")]
+
+### Table 1: showing missingness
+dattab1_mod <- dattab1
+dattab1_mod[] <- lapply(dattab1, function(x) ifelse(is.na(x), "Missing", x)) # adjust data so that R can process missing values
+
+vars <- c("HearingTrouble", "SleepDeficit", "AgeSixtyPlus", "AlcoholPastYear", "ExCerumen", "HeartDisease")
+
+table1 <- CreateTableOne(vars = vars, data = dattab1_mod, factorVars = vars, includeNA = T)
+table1_df <- print(table1, showAllLevels = TRUE, useNA = "always", printToggle = FALSE)
+kable(table1_df, caption = "Characteristics of Adults in the NHANES 2017–March 2020 Cohort")
+
+
+
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for running analyses
+# Create function to run mod, return RR, CI, and n participants
+options(scipen = 999)
+
+rrci <- function(formula, dataset) {
+  
+  mod <- glm(formula, dataset, family = poisson)
+  
+  tidy_mod <- broom::tidy(mod, conf.int = TRUE, exponentiate = TRUE)
+  
+  main_var <- attr(terms(formula), "term.labels")[1]
+  main_term <- tidy_mod[grepl(paste0("^", main_var), tidy_mod$term), ]
+  
+  return(list(
+    relative_risk = main_term$estimate[1],
+    ci_95 = c(main_term$conf.low[1], main_term$conf.high[1]),
+    n = nobs(mod)
+  ))
+}
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code to run mod, return RR, CI, and n participants
+# Mod1
+mod1 <- rrci(formula = SleepDeficit ~ HearingTrouble, dataset = datcln)
+
+# Mod2
+mod2 <- datcln %>%
+  group_split(AgeSixtyPlus) %>%
+  map(~ rrci(formula = SleepDeficit ~ HearingTrouble, dataset = .x))
+
+# Mod3
+mod3 <- rrci(formula = SleepDeficit ~ HearingTrouble + AlcoholPastYear, dataset = datcln)
+
+# Mod4
+mod4 <- rrci(formula = SleepDeficit ~ HearingTrouble + ExCerumen, dataset = datcln)
+
+# Mod5
+mod5 <- datcln %>%
+  filter(!is.na(HeartDisease)) %>%
+  group_split(HeartDisease) %>%
+  map(~ rrci(formula = SleepDeficit ~ HearingTrouble, dataset = .x))
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for table of results
+
+# Define the labeled models list
+models <- list(
+  "1) Primary Analysis" = mod1,
+  "2a) Subanalysis: Under 60" = mod2[[1]],
+  "2b) Subanalysis: 60 or Above" = mod2[[2]],
+  "3) Subanalysis Adjusted for Alcohol" = mod3,
+  "4) Subanalysis Adjusted for Excessive Cerumen" = mod4,
+  "5a) Subanalysis: No Heart Disease" = mod5[[1]],
+  "5b) Subanalysis: Heart Disease" = mod5[[2]]
+)
+
+#Empty summary data frame
+model_summary <- data.frame(
+  Model = character(),
+  RR = numeric(),
+  CI_Lower = numeric(),
+  CI_Upper = numeric(),
+  N = integer(),
+  stringsAsFactors = FALSE
+)
+
+#Loop to fill in the data frame
+for (mod_name in names(models)) {
+  mod <- models[[mod_name]]
+  rr <- mod$relative_risk
+  ci <- mod$ci_95
+  n <- mod$n
+  
+  model_summary <- rbind(model_summary, data.frame(
+    Model = mod_name,
+    RR = round(rr, 2),
+    CI_Lower = round(ci[1], 2),
+    CI_Upper = round(ci[2], 2),
+    N = n
+  ))
+}
+
+knitr::kable(model_summary, caption = "Risk Ratios of Associations Between Hearing Trouble and Sleep Deficit")
+
+
+```
+
+
+\newpage
+
+
+# Write-Up
+## Methods
+
+
+  \underline{Study Setting and Study Population:} We obtained data from the National Health and Nutrition Examination Survey (NHANES), a United States program of studies aimed at assessing the health of children and adults in the U.S. population over time. Study subjects came from a U.S. representative sample of individuals ages 18 or above (n=9693) with data collected in the 2017-2020 NHANES cycle. This project did not involve human subjects and therefore did not require Ethics/IRB approval.
+
+
+  \underline{Data Collection:} Demographics data were collected through at-home interviews with a member of the household. Hearing trouble was assessed as a binary variable using the AUQ054 NHANES variable, separating individuals with good/excellent hearing and individuals with less than good hearing. Sleep deficit was also assessed as a binary variable using the SLD012 NHANES variable, comparing individuals with less than or equal to 6 hours of weekday sleep from individuals with greater than 6 hours of weekday sleep. Covariates included age, alcohol consumption in the past year, excessive cerumen, and heart disease. These were assessed using NHANES variables RIDAGEYR, ALQ121, AUXLOEXC, AUXROEXC, and MCQ160c respectively. Descriptive analyses included visualization of continuous variables using histograms and tabulating categorical variables. Based the age distribution of the sample changing at 60 years old, age was recoded as a binary variable, stratifying by individuals less than 60 years old and individuals greater than or equal to 60 years old. To be able to interpret findings in alcohol consumption categories of never, in-between, and daily, the alcohol consumption in the past year variable was recoded as a categorical variable with these categories after confirming no small numbers in the cross-tabulation of alcohol consumption and hearing trouble. Individuals were categorized as having excessive cerumen if they reported excessive cerumen in either their left or right ear or both ears. Participant responses including "Refused", "Don't know", or were missing were recoded as missing in the analysis. Finally, because cardiac disease has been associated with worsened low-frequency hearing^1^ and disruptions in sleep-wake cycles^2^, we were interested in examining the association between hearing and sleep stratified by heart disease status. Cross-tabulating heart disease status with hearing trouble showed no concerning small counts. Patterns of missingness were assessed using the mice R package^3^ which did not show monotonic missingness and was thus determined to be missing not at random (MNAR).
+
+
+  \underline{Statistical Analysis:} We fit Poisson regression models to test the association of hearing trouble and having a usual weekday sleep time of 6 hours or less. In four independent subanalyses we fit separate models stratified by age greater than or equal to 60 years, adjusted for alcohol consumption in the past year, adjusted for excessive cerumen, and stratified by heart disease status. We used a cut off of p<0.05 to determine statistical significance. 
+
+
+## Results
+
+
+A majority of participants in the sample population were under the age of 60 (64.7%) (Figure 1), did not have hearing trouble (75.9%), did not sleep 6 hours or less per weekday night (52.6%) and did not have heart disease (90.6%) (Table 1).
+
+  
+There were generally no statistically significant associations between hearing trouble and sleeping 6 or fewer hours during the weekdays (Table 2). In our unadjusted model, individuals who had hearing trouble had `r round(mod1$relative_risk, 2)` times (95% CI: `r round(mod1$ci_95[1], 2)` - `r round(mod1$ci_95[2], 2)`, n = `r round(mod1$n, 2)`) higher risk of sleep deficit than individuals who had good or excellent hearing. Among individuals under 60 years old, those who had hearing trouble had `r round(mod2[[1]]$relative_risk, 2)` times (95% CI: `r round(mod2[[1]]$ci_95[1], 2)` - `r round(mod2[[1]]$ci_95[2], 2)`, n = `r round(mod2[[1]]$n, 2)`) the risk of sleep deficit compared to  individuals who had good or excellent hearing. Among individuals 60 years old or greater, those who had hearing trouble had `r round(mod2[[2]]$relative_risk, 2)` times (95% CI: `r round(mod2[[2]]$ci_95[1], 2)` - `r round(mod2[[2]]$ci_95[2], 2)`, n = `r round(mod2[[2]]$n, 2)` higher risk of sleep deficit than individuals who had good or excellent hearing. Adjusting for alcohol consumption, individuals who had hearing trouble had `r round(mod3$relative_risk, 2)` times (95% CI: `r round(mod3$ci_95[1], 2)` - `r round(mod3$ci_95[2], 2)`, n = `r round(mod3$n, 2)`) higher risk of sleep deficit than individuals who had good or excellent hearing. Among individuals who did not have heart disease, those who had hearing trouble had `r round(mod5[[1]]$relative_risk, 2)` times (95% CI: `r round(mod5[[1]]$ci_95[1], 2)` - `r round(mod5[[1]]$ci_95[2], 2)`, n = `r round(mod5[[1]]$n, 2)`) the risk of sleep deficit compared to individuals who had good or excellent hearing. In individuals who did have heart disease, those who also had hearing trouble had `r round(mod5[[2]]$relative_risk, 2)` times (95% CI: `r round(mod5[[2]]$ci_95[1], 2)` - `r round(mod5[[2]]$ci_95[2], 2)`, n = `r round(mod5[[2]]$n, 2)`) higher risk of sleep deficit compared to individuals who had good or excellent hearing. When adjusting for excessive cerumen, we did see an association between hearing trouble and sleeping. Individuals who had hearing trouble had `r round(mod4$relative_risk, 2)` times (95% CI: `r round(mod4$ci_95[1], 2)` - `r round(mod4$ci_95[2], 2)`, n = `r round(mod4$n, 2)`) higher risk of sleep deficit than individuals who had good or excellent hearing.
+
+
+
+
+## References
+
+1. Wattamwar, K. et al. Association of Cardiovascular Comorbidities With Hearing Loss in the Older Old. JAMA Otolaryngol Head Neck Surg 144, (2018).
+
+2. Ziegler, K. A. et al. Immune-mediated denervation of the pineal gland underlies sleep disturbance in cardiac disease. Science 381, 285–290 (2023).
+
+3. Buuren, S. van & Groothuis-Oudshoorn, K. mice: Multivariate Imputation by Chained Equations in R. Journal of Statistical Software 45, 1–67 (2011).
+
+
+\newpage
+
+
+# Code Appendix  
+ 
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE} 
+```
