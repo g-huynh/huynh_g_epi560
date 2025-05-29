@@ -1,0 +1,137 @@
+---
+title: "EPI 560: Lab 18"
+author: "Gina Huynh"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    html_document:
+        df_print: paged
+        theme: cosmo
+        toc: yes
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "build") })
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Setup
+library(pacman)
+library(DBI)
+library(RSQLite)
+library(lubridate)
+library(summarytools)
+library(mice)
+p_load("tidyverse", "knitr", "usethis", "gitcreds")
+
+```
+
+
+## Lab 18: Responses 
+
+Get the data: SEQL table / variable:
+
++ Weekday sleep: P_SLQ / SLD012
+
++ Weekend sleep: P_SLQ / SLD013 
+
++ Gender: DEMO_J / RIAGENDR 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Code to get the data
+db <- dbConnect(RSQLite::SQLite(), dbname = "epi560.sqlite")
+dat <- dbGetQuery(db, "SELECT 
+  s.SEQN, 
+  s.SLD012 AS DaySleep,
+  s.SLD013 AS EndSleep,
+  d.RIAGENDR AS Gender
+FROM P_SLQ s
+LEFT JOIN P_DEMO d ON s.SEQN = d.SEQN"
+)
+
+dbDisconnect(db)
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code for first figure
+dat$Gender <- factor(dat$Gender, labels = c("Male", "Female"))
+
+fig1 <- ggplot(dat, aes(x = DaySleep, y = EndSleep, color = Gender, shape = Gender)) +
+  geom_jitter(size = 3, width = 0, height = 0.2) +
+  geom_smooth(method = "lm", se = FALSE, linetype = "dashed", size = 1.2) +
+  scale_color_manual(values = c("Male" = "#a1a9b5", "Female" = "#e98176")) +
+  scale_shape_manual(values = c("Male" = 16, "Female" = 17)) +
+  labs(
+    x = "Sleep hours: weekday",
+    y = "Sleep hours: weekend",
+    caption = "Panel A: Scatter plot of weekday vs weekend sleep hours"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.caption = element_text(hjust = 0.5, size = 13),
+    axis.title = element_text(size = 14),
+    axis.text.x = element_text(size = 13),
+    axis.text.y = element_text(size = 13),
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    plot.margin = margin(t = 20, r = 10, b = 10, l = 10)
+  )
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Reshape to long format
+dat_long <- dat %>%
+  pivot_longer(cols = c(DaySleep, EndSleep),
+               names_to = "SleepType",
+               values_to = "Hours")
+
+dat_long$SleepType <- recode(dat_long$SleepType,
+                              DaySleep = "Weekday",
+                              EndSleep = "Weekend")
+
+# Code for second figure
+fig2 <- ggplot(dat_long, aes(x = Gender, y = Hours, fill = Gender)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  scale_fill_manual(values = c("Male" = "#a1a9b5", "Female" = "#e98176")) +
+  facet_wrap(~ SleepType, nrow = 1, strip.position = "top") +
+  labs(
+    x = "Gender",
+    y = "Sleep Hours",
+    caption = "Panel B: Violin plot of sleep hours stratified by gender"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.caption = element_text(hjust = 0.5, size = 13),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text.x = element_text(size = 13),
+    axis.text.y = element_text(size = 13),
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    strip.text = element_text(size = 14)
+  )
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Code to combine plots
+#install.packages("patchwork")
+library(patchwork)
+fig1 / fig2 + 
+  plot_annotation(
+    title = "Sleep patterns by gender",
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, size = 22)
+    )
+  )
+
+```
+
+\newpage
+
+## Code Appendix  
+ 
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE} 
+```
